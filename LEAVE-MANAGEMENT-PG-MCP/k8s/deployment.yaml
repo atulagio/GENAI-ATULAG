@@ -15,19 +15,12 @@ spec:
       labels:
         app: leave-mcp-server
     spec:
-      # Only needed if your GHCR package is private — EKS nodes have no
-      # credentials to pull from ghcr.io by default. Either make the
-      # package public (repo -> Packages -> Package settings -> Change
-      # visibility), or uncomment this after creating the pull secret:
+      # No imagePullSecrets needed here: EKS worker nodes can pull from
+      # ECR directly via their node IAM role (AmazonEC2ContainerRegistryReadOnly
+      # is included in the standard EKS node IAM policy). If your node role
+      # was customized to remove that, re-add it — that's the only
+      # requirement for image pulls to work.
       #
-      #   kubectl create secret docker-registry ghcr-pull-secret \
-      #     --namespace leave-management \
-      #     --docker-server=ghcr.io \
-      #     --docker-username=<your-github-username> \
-      #     --docker-password=<a GitHub PAT with read:packages scope>
-      #
-      # imagePullSecrets:
-      #   - name: ghcr-pull-secret
       # Wait for the database (Neon, or whatever DATABASE_URL points to) to
       # accept connections before starting the app, so a slow/cold-starting
       # DB doesn't cause a crash-loop. pg_isready understands a full
@@ -51,9 +44,11 @@ spec:
               done
       containers:
         - name: leave-mcp-server
-          # Replace with your GHCR image; CD workflow pushes
-          # ghcr.io/<owner>/<repo>:<sha|latest|vX.Y.Z>
-          image: ghcr.io/OWNER/REPO:latest
+          # Replaced automatically by `kubectl set image` in cd.yml on every
+          # deploy. This placeholder is only used the very first time you
+          # apply the manifest by hand — swap in your real ECR URI, e.g.
+          # 123456789012.dkr.ecr.ap-south-1.amazonaws.com/leave-management-mcp:latest
+          image: ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/leave-management-mcp:latest
           ports:
             - containerPort: 8000
               name: http

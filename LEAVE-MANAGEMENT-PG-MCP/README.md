@@ -184,16 +184,19 @@ for this: every `run:` step executes inside the project subfolder via
 `defaults.run.working-directory`, and steps that don't respect that
 (`docker/build-push-action`) get an explicit path instead.
 
-- **`ci.yml`** — runs on every push/PR to `master` that touches
+- **`ci.yml`** — runs on every push/PR to `main` that touches
   `LEAVE-MANAGEMENT-PG-MCP/**`. Spins up a real Postgres service
   container, applies `schema.sql`, runs the unit test suite (in-memory
   backend) plus a Postgres connectivity smoke test, lints with `ruff`,
   and validates the Dockerfile builds.
-- **`cd.yml`** — on push to `master`: builds the image, pushes it to GitHub
-  Container Registry (`ghcr.io/<owner>/<repo>`), authenticates to AWS,
-  points `kubectl` at your EKS cluster, syncs the `leave-mcp-secrets`
-  Kubernetes Secret from `DATABASE_URL` (your Neon connection string),
-  and rolls out the new image.
+- **`cd.yml`** — on push to `main`: authenticates to AWS, builds the image
+  and pushes it to **Amazon ECR** (creating the repository on first run if
+  it doesn't exist yet), points `kubectl` at your EKS cluster, syncs the
+  `leave-mcp-secrets` Kubernetes Secret from `DATABASE_URL` (your Neon
+  connection string), and rolls out the new image.
+
+ECR (rather than GHCR) is used because EKS worker nodes can pull from ECR
+directly via their node IAM role — no image pull secrets to manage at all.
 
 ### GitHub setup
 
@@ -212,9 +215,13 @@ go in the **Variables** tab instead, but since you've already added all
 four to **Secrets**, `cd.yml` reads all four as `secrets.*` to match —
 functionally identical either way, just has to be consistent.)
 
-Also: Settings → Actions → General → Workflow permissions → **Read and write
-permissions** (needed so the workflow can push to GHCR using the built-in
-`GITHUB_TOKEN` — no separate secret needed for that part).
+Your IAM user needs ECR permissions too — either attach the AWS-managed
+`AmazonEC2ContainerRegistryFullAccess` policy, or a scoped-down custom
+policy covering `ecr:CreateRepository`, `ecr:DescribeRepositories`,
+`ecr:GetAuthorizationToken`, `ecr:BatchCheckLayerAvailability`,
+`ecr:PutImage`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`,
+`ecr:CompleteLayerUpload`. Without these, the `Ensure ECR repository
+exists` or `Build and push` steps fail with an AWS permissions error.
 
 ### Neon database
 
@@ -233,22 +240,17 @@ Since Neon is managed and external to the cluster, `k8s/postgres.yaml`
 — it's kept in the repo only as a fallback if you ever self-host Postgres
 instead.
 
-### Two things that trip people up on EKS specifically
+### Something that trips people up on EKS specifically
 
-1. **The IAM user needs cluster RBAC access, separately from AWS IAM
-   permissions.** Being able to call the AWS API isn't the same as being
-   allowed to run `kubectl` commands against the cluster. Whoever created
-   the EKS cluster needs to grant your IAM user access — either via an
-   **EKS access entry** (`aws eks create-access-entry` /
-   `aws eks associate-access-policy`, the modern approach) or by editing
-   the `aws-auth` ConfigMap (older clusters). Without this, every
-   `kubectl` command in the workflow fails with `Unauthorized`, even
-   though the `aws eks update-kubeconfig` step itself succeeds.
-2. **EKS nodes can't pull from a private GHCR package** without
-   credentials. Either make the package public (repo → Packages →
-   package settings → Change visibility), or create a pull secret and
-   uncomment `imagePullSecrets` in `k8s/deployment.yaml` — instructions
-   are in a comment right above it.
+**The IAM user needs cluster RBAC access, separately from AWS IAM
+permissions.** Being able to call the AWS API isn't the same as being
+allowed to run `kubectl` commands against the cluster. Whoever created
+the EKS cluster needs to grant your IAM user access — either via an
+**EKS access entry** (`aws eks create-access-entry` /
+`aws eks associate-access-policy`, the modern approach) or by editing
+the `aws-auth` ConfigMap (older clusters). Without this, every `kubectl`
+command in the workflow fails with `Unauthorized`, even though the
+`aws eks update-kubeconfig` step itself succeeds.
 
 ## Kubernetes deployment
 
@@ -275,7 +277,7 @@ Manifests live in `k8s/` (all commands below assume you've `cd`'d into
 | `ingress.yaml` | Optional — external HTTPS access via an ingress controller |
 | `kustomization.yaml` | Ties the above together for `kubectl apply -k k8s/` (excludes `postgres.yaml` and `migrate-job.yaml`) |
 
-### Deploy steps (manual — `cd.yml` automates all of this on every push to `master`)
+### Deploy steps (manual — `cd.yml` automates all of this on every push to `main`)
 
 ```bash
 cd LEAVE-MANAGEMENT-PG-MCP
@@ -292,7 +294,8 @@ psql "$DATABASE_URL" -f schema.sql
 # 3. App
 kubectl apply -k k8s/
 kubectl set image deployment/leave-mcp-server \
-  leave-mcp-server=ghcr.io/<owner>/<repo>:latest -n leave-management
+  leave-mcp-server=<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/leave-management-mcp:latest \
+  -n leave-management
 kubectl rollout status deployment/leave-mcp-server -n leave-management
 ```
 
