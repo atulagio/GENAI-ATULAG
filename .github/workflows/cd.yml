@@ -24,6 +24,7 @@ on:
 env:
   ECR_REPOSITORY: leave-management-mcp
   PROJECT_DIR: LEAVE-MANAGEMENT-PG-MCP
+  NAMESPACE: leave-management
 
 jobs:
   build-and-push:
@@ -105,7 +106,7 @@ jobs:
         # postgresql://user:password@ep-xxxx.region.aws.neon.tech/leave_management?sslmode=require
         run: |
           kubectl create secret generic leave-mcp-secrets \
-            --namespace leave-management \
+            --namespace "${NAMESPACE}" \
             --from-literal=DATABASE_URL='${{ secrets.DATABASE_URL }}' \
             --dry-run=client -o yaml | kubectl apply -f -
 
