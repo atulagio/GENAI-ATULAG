@@ -97,6 +97,9 @@ jobs:
             --name "${{ secrets.EKS_CLUSTER_NAME }}" \
             --region "${{ secrets.AWS_REGION }}"
 
+      - name: Ensure namespace exists
+        run: kubectl apply -f k8s/namespace.yaml
+
       - name: Create/update leave-mcp-secrets from GitHub secrets
         # DATABASE_URL should be your Neon connection string, e.g.
         # postgresql://user:password@ep-xxxx.region.aws.neon.tech/leave_management?sslmode=require
@@ -108,7 +111,6 @@ jobs:
 
       - name: Apply manifests (app only — Neon replaces in-cluster postgres.yaml)
         run: |
-          kubectl apply -f k8s/namespace.yaml
           kubectl apply -f k8s/configmap.yaml
           kubectl apply -f k8s/deployment.yaml
           kubectl apply -f k8s/service.yaml
