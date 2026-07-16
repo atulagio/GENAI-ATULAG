@@ -19,7 +19,12 @@ name: CD
 on:
   push:
     branches: ["master"]
-    paths: ["LEAVE-MANAGEMENT-PG-MCP/**"]
+    paths:
+      - "LEAVE-MANAGEMENT-PG-MCP/**"
+      - ".github/workflows/cd.yml"
+  workflow_dispatch: {}  # lets you trigger a run manually from the Actions tab,
+                          # useful when you just want to confirm a workflow-file
+                          # fix without touching app code
 
 env:
   ECR_REPOSITORY: leave-management-mcp
