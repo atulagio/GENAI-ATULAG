@@ -122,9 +122,26 @@ jobs:
           kubectl apply -f k8s/service.yaml
           kubectl apply -f k8s/ingress.yaml
 
+      - name: Get AWS Account ID
+        id: account
+        run: |
+          echo "account_id=$(aws sts get-caller-identity --query Account --output text)" >> "$GITHUB_OUTPUT"
+
+      - name: Debug image URI
+        run: |
+          echo "image_uri='${{ needs.build-and-push.outputs.image_uri }}'"
+          
       - name: Set image and roll out
         run: |
+          IMAGE="${{ steps.account.outputs.account_id }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${ECR_REPOSITORY}:${{ github.sha }}"
+
+          echo "Deploying image: $IMAGE"
+
           kubectl set image deployment/leave-mcp-server \
-            leave-mcp-server=${{ needs.build-and-push.outputs.image_uri }} \
-            -n leave-management
-          kubectl rollout status deployment/leave-mcp-server -n leave-management --timeout=180s
+            leave-mcp-server=$IMAGE \
+            -n ${NAMESPACE}
+
+          kubectl rollout status deployment/leave-mcp-server \
+            -n ${NAMESPACE} \
+            --timeout=180s
+            
