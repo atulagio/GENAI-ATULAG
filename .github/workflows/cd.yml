@@ -1,6 +1,6 @@
 name: CD
 
-# Runs after CI succeeds on master.
+# Runs after CI succeeds on main.
 # 1. Builds and pushes the image to GitHub Container Registry (GHCR).
 # 2. Rolls the new image out to an AWS EKS cluster.
 #
@@ -32,6 +32,12 @@ jobs:
       image_tag: ${{ steps.meta.outputs.tags }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        # Required for cache-to/cache-from: type=gha below — the default
+        # "docker" builder driver doesn't support cache export at all and
+        # fails with "Cache export is not supported for the docker driver".
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
