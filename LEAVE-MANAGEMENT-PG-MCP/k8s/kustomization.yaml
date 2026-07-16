@@ -1,13 +1,17 @@
 # Apply everything except the secret (create that separately — see
-# secret.example.yaml) and the schema configmap (generated from schema.sql
-# — see migrate-job.yaml comments) with:
+# secret.example.yaml) with:
 #
 #   kubectl apply -k k8s/
 #
-# Order matters a little: postgres + migrate-job should be Ready/Complete
-# before the app deployment's pods will pass readiness. The initContainer
-# in deployment.yaml handles that automatically, but for the migration Job
-# specifically, run it once manually the first time (see migrate-job.yaml).
+# Database is Neon (managed Postgres, external to the cluster) — so
+# postgres.yaml (in-cluster Postgres StatefulSet) is NOT included here.
+# It's kept in this folder only as a reference/fallback if you ever want
+# to self-host Postgres instead; apply it manually with
+# `kubectl apply -f k8s/postgres.yaml` if you switch back.
+#
+# Before the app deployment's pods pass readiness, the schema needs to
+# exist on Neon — run migrate-job.yaml once (see its own comments) or
+# apply schema.sql directly via `psql "$NEON_URL" -f schema.sql`.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -16,7 +20,6 @@ namespace: leave-management
 resources:
   - namespace.yaml
   - configmap.yaml
-  - postgres.yaml
   - deployment.yaml
   - service.yaml
   - ingress.yaml

@@ -7,7 +7,6 @@ data:
   MCP_TRANSPORT: "streamable-http"
   MCP_HOST: "0.0.0.0"
   MCP_PORT: "8000"
-  POSTGRES_DB: "leave_management"
-  POSTGRES_USER: "leave_user"
-  POSTGRES_HOST: "postgres.leave-management.svc.cluster.local"
-  POSTGRES_PORT: "5432"
+  # No POSTGRES_HOST/PORT/DB/USER here — the app only reads DATABASE_URL
+  # (from the leave-mcp-secrets Secret), which for Neon is a full
+  # connection string including host, so these would be unused/stale.

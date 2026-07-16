@@ -15,8 +15,23 @@ spec:
       labels:
         app: leave-mcp-server
     spec:
-      # Wait for postgres to accept connections before starting the app,
-      # so a slow DB on first boot doesn't cause a crash-loop.
+      # Only needed if your GHCR package is private — EKS nodes have no
+      # credentials to pull from ghcr.io by default. Either make the
+      # package public (repo -> Packages -> Package settings -> Change
+      # visibility), or uncomment this after creating the pull secret:
+      #
+      #   kubectl create secret docker-registry ghcr-pull-secret \
+      #     --namespace leave-management \
+      #     --docker-server=ghcr.io \
+      #     --docker-username=<your-github-username> \
+      #     --docker-password=<a GitHub PAT with read:packages scope>
+      #
+      # imagePullSecrets:
+      #   - name: ghcr-pull-secret
+      # Wait for the database (Neon, or whatever DATABASE_URL points to) to
+      # accept connections before starting the app, so a slow/cold-starting
+      # DB doesn't cause a crash-loop. pg_isready understands a full
+      # connection-string URI, including Neon's ?sslmode=require suffix.
       initContainers:
         - name: wait-for-postgres
           image: postgres:16

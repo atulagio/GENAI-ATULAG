@@ -177,29 +177,78 @@ Try prompts like:
 
 ## CI/CD (GitHub Actions)
 
-Two workflows live in `.github/workflows/`:
+This is a **monorepo** — the project lives in `LEAVE-MANAGEMENT-PG-MCP/`,
+not at the git repo root, and `.github/workflows/` sits at the repo root
+(GitHub Actions only discovers workflows there). Both workflows account
+for this: every `run:` step executes inside the project subfolder via
+`defaults.run.working-directory`, and steps that don't respect that
+(`docker/build-push-action`) get an explicit path instead.
 
-- **`ci.yml`** — runs on every push/PR to `main`. Spins up a real Postgres
-  service container, applies `schema.sql`, runs the unit test suite
-  (in-memory backend) plus a Postgres connectivity smoke test, lints with
-  `ruff`, and validates the Dockerfile builds.
-- **`cd.yml`** — runs on push to `main` or a `vX.Y.Z` tag. Builds the image
-  and pushes it to GitHub Container Registry (`ghcr.io/<owner>/<repo>`),
-  tagged with the commit SHA, `latest` (on main), and semver (on tags). The
-  deploy job is **off by default** — it only runs if you set the repo
-  variable `DEPLOY_ENABLED=true` (Settings → Secrets and variables →
-  Actions → Variables) and add a `KUBE_CONFIG` secret (base64-encoded
-  kubeconfig for your cluster). Until then, just deploy manually with
-  `kubectl apply -k k8s/` after each image push.
+- **`ci.yml`** — runs on every push/PR to `main` that touches
+  `LEAVE-MANAGEMENT-PG-MCP/**`. Spins up a real Postgres service
+  container, applies `schema.sql`, runs the unit test suite (in-memory
+  backend) plus a Postgres connectivity smoke test, lints with `ruff`,
+  and validates the Dockerfile builds.
+- **`cd.yml`** — on push to `main`: builds the image, pushes it to GitHub
+  Container Registry (`ghcr.io/<owner>/<repo>`), authenticates to AWS,
+  points `kubectl` at your EKS cluster, syncs the `leave-mcp-secrets`
+  Kubernetes Secret from `DATABASE_URL` (your Neon connection string),
+  and rolls out the new image.
 
-Setup steps on GitHub:
-1. Push this repo to GitHub.
-2. No extra secrets needed for CI — it uses the built-in `GITHUB_TOKEN`.
-3. For CD image pushes: also nothing extra needed, `GITHUB_TOKEN` covers
-   GHCR too, as long as the repo's Actions settings allow package writes
-   (Settings → Actions → General → Workflow permissions → Read and write).
-4. For automatic cluster rollout (optional): add the `KUBE_CONFIG` secret
-   and set `DEPLOY_ENABLED=true`.
+### GitHub setup
+
+Settings → Secrets and variables → Actions → **Secrets** tab:
+
+| Name | Value |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | From your IAM user |
+| `AWS_SECRET_ACCESS_KEY` | From your IAM user |
+| `AWS_REGION` | e.g. `ap-south-1` |
+| `EKS_CLUSTER_NAME` | Your cluster's name |
+| `DATABASE_URL` | Your Neon connection string — see below |
+
+(`AWS_REGION` / `EKS_CLUSTER_NAME` aren't sensitive and would conventionally
+go in the **Variables** tab instead, but since you've already added all
+four to **Secrets**, `cd.yml` reads all four as `secrets.*` to match —
+functionally identical either way, just has to be consistent.)
+
+Also: Settings → Actions → General → Workflow permissions → **Read and write
+permissions** (needed so the workflow can push to GHCR using the built-in
+`GITHUB_TOKEN` — no separate secret needed for that part).
+
+### Neon database
+
+Get your connection string from the Neon dashboard (Project → Connection
+Details) — it looks like:
+```
+postgresql://<user>:<password>@ep-xxxx-xxxx.<region>.aws.neon.tech/leave_management?sslmode=require
+```
+Use that exact string as the `DATABASE_URL` secret. Then apply the schema
+once — easiest from your own machine, no cluster needed for this step:
+```bash
+psql "postgresql://<user>:<password>@ep-xxxx.<region>.aws.neon.tech/leave_management?sslmode=require" -f LEAVE-MANAGEMENT-PG-MCP/schema.sql
+```
+Since Neon is managed and external to the cluster, `k8s/postgres.yaml`
+(in-cluster Postgres) is **not** applied by `cd.yml` or `kustomization.yaml`
+— it's kept in the repo only as a fallback if you ever self-host Postgres
+instead.
+
+### Two things that trip people up on EKS specifically
+
+1. **The IAM user needs cluster RBAC access, separately from AWS IAM
+   permissions.** Being able to call the AWS API isn't the same as being
+   allowed to run `kubectl` commands against the cluster. Whoever created
+   the EKS cluster needs to grant your IAM user access — either via an
+   **EKS access entry** (`aws eks create-access-entry` /
+   `aws eks associate-access-policy`, the modern approach) or by editing
+   the `aws-auth` ConfigMap (older clusters). Without this, every
+   `kubectl` command in the workflow fails with `Unauthorized`, even
+   though the `aws eks update-kubeconfig` step itself succeeds.
+2. **EKS nodes can't pull from a private GHCR package** without
+   credentials. Either make the package public (repo → Packages →
+   package settings → Change visibility), or create a pull secret and
+   uncomment `imagePullSecrets` in `k8s/deployment.yaml` — instructions
+   are in a comment right above it.
 
 ## Kubernetes deployment
 
@@ -211,57 +260,40 @@ port and is what the Docker image and K8s manifests use. Point any MCP
 client that supports remote/HTTP servers at `http://<service>/mcp` (or
 your Ingress host) instead of a local command.
 
-Manifests live in `k8s/`:
+Manifests live in `k8s/` (all commands below assume you've `cd`'d into
+`LEAVE-MANAGEMENT-PG-MCP/` first):
 
 | File | Purpose |
 |---|---|
 | `namespace.yaml` | Creates the `leave-management` namespace |
-| `configmap.yaml` | Non-secret config (transport, host/port, DB name/user) |
-| `secret.example.yaml` | Template for `DATABASE_URL` / `POSTGRES_PASSWORD` — see instructions inside, don't commit real values |
-| `postgres.yaml` | In-cluster Postgres (StatefulSet + PVC + headless Service). Skip this if you're pointing at a managed DB instead |
-| `migrate-job.yaml` | One-shot Job that applies `schema.sql` inside the cluster |
-| `deployment.yaml` | The MCP server itself — 2 replicas, health probes, resource limits, waits for Postgres via initContainer |
+| `configmap.yaml` | Non-secret config (transport, host, port) |
+| `secret.example.yaml` | Template for the `DATABASE_URL` (Neon) secret — see instructions inside, don't commit real values |
+| `postgres.yaml` | In-cluster Postgres fallback — **not used** while on Neon, kept for reference only |
+| `migrate-job.yaml` | Optional: applies `schema.sql` as a cluster Job. Usually simpler to just run `psql` from your own machine instead (see above) |
+| `deployment.yaml` | The MCP server itself — 2 replicas, health probes, resource limits, waits for the DB via initContainer |
 | `service.yaml` | ClusterIP Service in front of the deployment |
 | `ingress.yaml` | Optional — external HTTPS access via an ingress controller |
-| `kustomization.yaml` | Ties the above together for `kubectl apply -k k8s/` |
+| `kustomization.yaml` | Ties the above together for `kubectl apply -k k8s/` (excludes `postgres.yaml` and `migrate-job.yaml`) |
 
-### Deploy steps
+### Deploy steps (manual — `cd.yml` automates all of this on every push to `main`)
 
 ```bash
-# 1. Create the namespace and secret first
+cd LEAVE-MANAGEMENT-PG-MCP
+
+# 1. Namespace + secret
 kubectl apply -f k8s/namespace.yaml
 kubectl create secret generic leave-mcp-secrets \
   --namespace leave-management \
-  --from-literal=POSTGRES_PASSWORD='use-a-strong-password' \
-  --from-literal=DATABASE_URL='postgresql://leave_user:use-a-strong-password@postgres.leave-management.svc.cluster.local:5432/leave_management'
+  --from-literal=DATABASE_URL='postgresql://user:password@ep-xxxx.region.aws.neon.tech/leave_management?sslmode=require'
 
-# 2. Create the schema configmap from the real schema.sql (single source of truth)
-kubectl create configmap leave-mcp-schema \
-  --namespace leave-management \
-  --from-file=schema.sql=schema.sql
+# 2. Schema (once, against Neon directly — no cluster involvement needed)
+psql "$DATABASE_URL" -f schema.sql
 
-# 3. Bring up Postgres and wait for it to be ready
-kubectl apply -f k8s/postgres.yaml
-kubectl rollout status statefulset/postgres -n leave-management
-
-# 4. Apply the schema
-kubectl apply -f k8s/migrate-job.yaml
-kubectl wait --for=condition=complete job/leave-mcp-migrate -n leave-management --timeout=60s
-
-# 5. Point deployment.yaml at your real image, then deploy the app
-#    (edit the `image:` line, or use `kubectl set image` after applying)
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
-kubectl apply -f k8s/ingress.yaml   # optional, only if you need external access
-
-kubectl rollout status deployment/leave-mcp-server -n leave-management
-```
-
-Or, once the secret and schema configmap exist (steps 1–2 above, which are
-intentionally excluded from `kustomization.yaml` since they hold
-data/generated content):
-```bash
+# 3. App
 kubectl apply -k k8s/
+kubectl set image deployment/leave-mcp-server \
+  leave-mcp-server=ghcr.io/<owner>/<repo>:latest -n leave-management
+kubectl rollout status deployment/leave-mcp-server -n leave-management
 ```
 
 ### Verify it's running
@@ -282,7 +314,8 @@ kubectl port-forward svc/leave-mcp-server 8000:80 -n leave-management
 - **`readOnlyRootFilesystem: true`** is set in `deployment.yaml` as a
   security hardening default. If you later add code that writes to local
   disk (logs, temp files), remove that line or add a mounted `emptyDir`.
-- **In-cluster Postgres vs. managed DB:** `postgres.yaml` is there because
-  you mentioned deploying to your own server. If you later move to a
-  managed database, delete `postgres.yaml` and just update the
-  `DATABASE_URL` secret — nothing else changes.
+- **In-cluster Postgres vs. managed DB:** you're on Neon now, so
+  `postgres.yaml` is unused — kept only as a reference if you ever want to
+  self-host Postgres in-cluster instead. Switching back just means
+  applying that file and updating the `DATABASE_URL` secret to point at
+  the in-cluster service instead of Neon.

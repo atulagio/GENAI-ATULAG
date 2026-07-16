@@ -1,9 +1,16 @@
-# One-shot Job that applies schema.sql against the Postgres service.
-# Run this once after postgres.yaml is up and before/alongside deployment.yaml.
+# One-shot Job that applies schema.sql against your database (Neon).
 #
-# The schema itself is loaded from a ConfigMap generated straight from the
-# real schema.sql file (kept as the single source of truth), rather than
-# pasted inline here where it could drift out of sync:
+# Since the database is now Neon (external, managed) rather than
+# in-cluster, running this from inside the cluster is OPTIONAL — you can
+# equally well just run this once from your own machine, which is often
+# simpler:
+#
+#   psql "$NEON_DATABASE_URL" -f schema.sql
+#
+# If you'd rather run it as a cluster Job anyway (e.g. as part of a
+# scripted deploy), the schema is loaded from a ConfigMap generated
+# straight from the real schema.sql file (kept as the single source of
+# truth), rather than pasted inline here where it could drift out of sync:
 #
 #   kubectl create configmap leave-mcp-schema \
 #     --namespace leave-management \
