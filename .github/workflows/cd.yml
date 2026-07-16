@@ -18,8 +18,11 @@ on:
     paths: ["LEAVE-MANAGEMENT-PG-MCP/**"]
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}   # e.g. ghcr.io/your-org/your-monorepo
+  # REGISTRY: ghcr.io
+  # IMAGE_NAME: ${{ github.repository }}   # e.g. ghcr.io/your-org/your-monorepo
+  # PROJECT_DIR: LEAVE-MANAGEMENT-PG-MCP
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: leave-mcp-server   # Your ECR repository name
   PROJECT_DIR: LEAVE-MANAGEMENT-PG-MCP
 
 jobs:
@@ -36,18 +39,23 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
           tags: |
             type=sha,prefix=,format=short
             type=raw,value=latest,enable={{is_default_branch}}
@@ -106,6 +114,6 @@ jobs:
       - name: Set image and roll out
         run: |
           kubectl set image deployment/leave-mcp-server \
-            leave-mcp-server=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            leave-mcp-server=${{ needs.build-and-push.outputs.image_uri }} \
             -n leave-management
           kubectl rollout status deployment/leave-mcp-server -n leave-management --timeout=180s
