@@ -184,12 +184,12 @@ for this: every `run:` step executes inside the project subfolder via
 `defaults.run.working-directory`, and steps that don't respect that
 (`docker/build-push-action`) get an explicit path instead.
 
-- **`ci.yml`** — runs on every push/PR to `main` that touches
+- **`ci.yml`** — runs on every push/PR to `master` that touches
   `LEAVE-MANAGEMENT-PG-MCP/**`. Spins up a real Postgres service
   container, applies `schema.sql`, runs the unit test suite (in-memory
   backend) plus a Postgres connectivity smoke test, lints with `ruff`,
   and validates the Dockerfile builds.
-- **`cd.yml`** — on push to `main`: builds the image, pushes it to GitHub
+- **`cd.yml`** — on push to `master`: builds the image, pushes it to GitHub
   Container Registry (`ghcr.io/<owner>/<repo>`), authenticates to AWS,
   points `kubectl` at your EKS cluster, syncs the `leave-mcp-secrets`
   Kubernetes Secret from `DATABASE_URL` (your Neon connection string),
@@ -275,7 +275,7 @@ Manifests live in `k8s/` (all commands below assume you've `cd`'d into
 | `ingress.yaml` | Optional — external HTTPS access via an ingress controller |
 | `kustomization.yaml` | Ties the above together for `kubectl apply -k k8s/` (excludes `postgres.yaml` and `migrate-job.yaml`) |
 
-### Deploy steps (manual — `cd.yml` automates all of this on every push to `main`)
+### Deploy steps (manual — `cd.yml` automates all of this on every push to `master`)
 
 ```bash
 cd LEAVE-MANAGEMENT-PG-MCP

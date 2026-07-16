@@ -1,6 +1,6 @@
 name: CD
 
-# Runs after CI succeeds on main.
+# Runs after CI succeeds on master.
 # 1. Builds and pushes the image to GitHub Container Registry (GHCR).
 # 2. Rolls the new image out to an AWS EKS cluster.
 #
