@@ -7,7 +7,7 @@ name: CI
 # Repo layout is a monorepo — this project lives in a subfolder, not at
 # the repo root — so every `run:` step below executes inside PROJECT_DIR
 # via `defaults.run.working-directory`, and steps that don't respect that
-# (like docker/build-push-action) are given an explicit path instead.
+# (like docker/build-push-action) are given an explicit path instead..
 on:
   push:
     branches: ["master"]
