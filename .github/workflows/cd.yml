@@ -5,7 +5,7 @@ name: CD
 # 2. Rolls the new image out to Kubernetes (only if KUBE_CONFIG secret is set).
 on:
   push:
-    branches: ["main"]
+    branches: ["master"]
     tags: ["v*"]
 
 env:

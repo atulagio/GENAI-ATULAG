@@ -5,9 +5,9 @@ name: CI
 # against a real Postgres service container using schema.sql.
 on:
   push:
-    branches: ["main"]
+    branches: ["master"]
   pull_request:
-    branches: ["main"]
+    branches: ["master"]
 
 jobs:
   test:
