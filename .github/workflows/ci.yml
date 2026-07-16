@@ -9,6 +9,10 @@ on:
   pull_request:
     branches: ["master"]
 
+env:
+  PROJECT_DIR: LEAVE-MANAGEMENT-PG-MCP
+  NAMESPACE: leave-management
+
 jobs:
   test:
     runs-on: ubuntu-latest
