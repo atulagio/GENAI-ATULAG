@@ -74,10 +74,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          # NOTE: these two are read from `secrets`, not `vars`, because
-          # that's the tab they were added to in GitHub. Functionally
-          # identical either way — just has to match where you put them.
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}          
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Set up kubectl
