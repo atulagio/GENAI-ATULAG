@@ -1,0 +1,51 @@
+# One-shot Job that applies schema.sql against the Postgres service.
+# Run this once after postgres.yaml is up and before/alongside deployment.yaml.
+#
+# The schema itself is loaded from a ConfigMap generated straight from the
+# real schema.sql file (kept as the single source of truth), rather than
+# pasted inline here where it could drift out of sync:
+#
+#   kubectl create configmap leave-mcp-schema \
+#     --namespace leave-management \
+#     --from-file=schema.sql=schema.sql \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#
+#   kubectl apply -f k8s/migrate-job.yaml
+#   kubectl wait --for=condition=complete job/leave-mcp-migrate -n leave-management --timeout=60s
+#
+# Re-running is safe: schema.sql uses IF NOT EXISTS / ON CONFLICT DO NOTHING.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: leave-mcp-migrate
+  namespace: leave-management
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: postgres:16
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: leave-mcp-secrets
+                  key: DATABASE_URL
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -d "$DATABASE_URL"; do
+                echo "waiting for postgres..."
+                sleep 2
+              done
+              psql "$DATABASE_URL" -f /schema/schema.sql
+          volumeMounts:
+            - name: schema
+              mountPath: /schema
+      volumes:
+        - name: schema
+          configMap:
+            name: leave-mcp-schema

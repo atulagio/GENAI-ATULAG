@@ -1,0 +1,79 @@
+name: CI
+
+# Runs on every push and PR. Validates the code against BOTH backends:
+# fast unit tests against the in-memory DB, plus an integration check
+# against a real Postgres service container using schema.sql.
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: leave_user
+          POSTGRES_PASSWORD: leave_pass
+          POSTGRES_DB: leave_management
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U leave_user -d leave_management"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://leave_user:leave_pass@localhost:5432/leave_management
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Apply schema to test database
+        run: psql "$DATABASE_URL" -f schema.sql
+        env:
+          PGPASSWORD: leave_pass
+
+      - name: Run unit tests (in-memory backend)
+        run: python -m pytest tests/ -v
+
+      - name: Smoke-test Postgres backend
+        run: |
+          python - <<'EOF'
+          from database import LeaveDB
+          from leave_service import LeaveService
+          svc = LeaveService(LeaveDB())
+          print("Postgres connectivity OK. Balance:", svc.leave_balance("E002"))
+          EOF
+
+      - name: Lint (ruff)
+        run: |
+          pip install ruff
+          ruff check . --exit-zero  # non-blocking for now; flip to blocking once codebase is ruff-clean
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image (no push) to validate Dockerfile
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: leave-management-mcp:ci-check

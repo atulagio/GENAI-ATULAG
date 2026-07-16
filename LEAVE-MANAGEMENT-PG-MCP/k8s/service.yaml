@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: leave-mcp-server
+  namespace: leave-management
+spec:
+  selector:
+    app: leave-mcp-server
+  ports:
+    - port: 80
+      targetPort: 8000
+      name: http
+  type: ClusterIP

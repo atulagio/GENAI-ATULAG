@@ -10,10 +10,19 @@ Exposes 5 tools to any MCP-compatible AI assistant (Claude Desktop, etc.):
     - leave_balance       : check remaining leave days
     - leave_history        : list past/pending requests
 
+Transport is controlled by the MCP_TRANSPORT env var:
+    - "stdio"           (default) - for Claude Desktop / local MCP clients
+                          that spawn this process directly.
+    - "streamable-http" - for running in a container / Kubernetes, where
+                          a client connects over the network instead of
+                          spawning a subprocess. Listens on MCP_HOST:MCP_PORT.
+
 Run with:
-    python server.py                      (stdio transport, for Claude Desktop)
+    python server.py                                  (stdio, local)
+    MCP_TRANSPORT=streamable-http python server.py     (network, container/K8s)
 """
 
+import os
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -22,7 +31,11 @@ from database import LeaveDB
 from leave_service import LeaveService, LeaveError
 from models import LeaveRequest
 
-mcp = FastMCP("leave-management")
+MCP_TRANSPORT = os.environ.get("MCP_TRANSPORT", "stdio")
+MCP_HOST = os.environ.get("MCP_HOST", "0.0.0.0")
+MCP_PORT = int(os.environ.get("MCP_PORT", "8000"))
+
+mcp = FastMCP("leave-management", host=MCP_HOST, port=MCP_PORT)
 
 db = LeaveDB()
 service = LeaveService(db)
@@ -158,4 +171,4 @@ def leave_history(employee_id: str, status: Optional[str] = None) -> dict:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    mcp.run(transport=MCP_TRANSPORT)

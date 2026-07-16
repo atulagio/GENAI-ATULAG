@@ -1,0 +1,22 @@
+# Apply everything except the secret (create that separately — see
+# secret.example.yaml) and the schema configmap (generated from schema.sql
+# — see migrate-job.yaml comments) with:
+#
+#   kubectl apply -k k8s/
+#
+# Order matters a little: postgres + migrate-job should be Ready/Complete
+# before the app deployment's pods will pass readiness. The initContainer
+# in deployment.yaml handles that automatically, but for the migration Job
+# specifically, run it once manually the first time (see migrate-job.yaml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: leave-management
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - postgres.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml

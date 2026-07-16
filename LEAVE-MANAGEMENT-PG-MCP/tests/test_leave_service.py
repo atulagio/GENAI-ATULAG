@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from datetime import date, timedelta
 import pytest
 
-from database import LeaveDB
+from database_memory import LeaveDB
 from leave_service import (
     LeaveService, EmployeeNotFound, InvalidLeaveType, InvalidDateRange,
     InsufficientBalance, OverlappingLeave, NotAuthorized, InvalidState,

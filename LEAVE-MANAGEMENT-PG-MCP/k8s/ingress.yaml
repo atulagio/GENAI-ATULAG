@@ -1,0 +1,31 @@
+# Optional — only needed if you want the MCP server reachable from outside
+# the cluster (e.g. so a remote Claude/MCP client can connect over HTTPS).
+# Requires an ingress controller (e.g. ingress-nginx) already running on
+# your server. Delete this file if you'll only ever connect from inside
+# the cluster or via port-forward.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: leave-mcp-server
+  namespace: leave-management
+  annotations:
+    # Uncomment if using cert-manager for automatic TLS certs:
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: leave-mcp.example.com   # replace with your real domain
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: leave-mcp-server
+                port:
+                  number: 80
+  # tls:
+  #   - hosts:
+  #       - leave-mcp.example.com
+  #     secretName: leave-mcp-tls

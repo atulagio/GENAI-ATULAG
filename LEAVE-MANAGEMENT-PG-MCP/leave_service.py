@@ -123,16 +123,13 @@ class LeaveService:
                 f"but only {available} day(s) remain"
             )
 
-        request = LeaveRequest(
-            id=self.db.next_request_id(),
+        return self.db.create_leave_request(
             employee_id=employee_id,
             leave_type=LeaveType(leave_type),
             start_date=start,
             end_date=end,
             reason=reason,
         )
-        self.db.add_leave_request(request)
-        return request
 
     # ---------------------------------------------------------------
     def approve_leave(self, request_id: str, manager_id: str, decision: str,
@@ -166,13 +163,14 @@ class LeaveService:
 
         if decision_norm == "approved":
             # Deduct balance only on approval
-            employee.leave_balance[request.leave_type.value] -= request.days
+            self.db.update_leave_balance(employee.id, request.leave_type.value, -request.days)
             request.status = LeaveStatus.APPROVED
         else:
             request.status = LeaveStatus.REJECTED
 
         request.approved_by = manager_id
         request.decision_note = note
+        self.db.update_request(request)
         return request
 
     # ---------------------------------------------------------------
@@ -198,9 +196,9 @@ class LeaveService:
 
         if was_approved:
             # Refund the balance since the days are no longer being taken
-            employee = self._require_employee(employee_id)
-            employee.leave_balance[request.leave_type.value] += request.days
+            self.db.update_leave_balance(employee_id, request.leave_type.value, request.days)
 
+        self.db.update_request(request)
         return request
 
     # ---------------------------------------------------------------
