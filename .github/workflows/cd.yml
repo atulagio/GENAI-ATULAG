@@ -117,23 +117,26 @@ jobs:
 
       - name: Apply manifests (app only — Neon replaces in-cluster postgres.yaml)
         run: |
+          IMAGE="${{ needs.build-and-push.outputs.image_uri }}"
+          if [ -z "$IMAGE" ]; then
+            echo "::error::image_uri output from the build-and-push job is empty — aborting deploy instead of applying a broken image. This usually means the workflow was re-run via 'Re-run failed jobs' instead of a fresh run/push; try 'Run workflow' or a new push instead."
+            exit 1
+          fi
+          echo "Deploying image: $IMAGE"
+
           kubectl apply -f k8s/configmap.yaml
-          kubectl apply -f k8s/deployment.yaml
+          # Substitute the real image into deployment.yaml before applying,
+          # instead of applying the file's placeholder image and fixing it
+          # up afterward with `kubectl set image` — that two-step approach
+          # leaves a window (or a permanently broken state, if the second
+          # step ever fails) where the deployment points at the literal
+          # placeholder string, which is invalid and can never pull.
+          sed "s|ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/leave-management-mcp:latest|$IMAGE|" \
+            k8s/deployment.yaml | kubectl apply -f -
           kubectl apply -f k8s/service.yaml
           kubectl apply -f k8s/ingress.yaml
 
-      - name: Set image and roll out
-        run: |
-          IMAGE="${{ needs.build-and-push.outputs.image_uri }}"
-          echo "Deploying image: $IMAGE"
-
-          kubectl set image deployment/leave-mcp-server \
-            leave-mcp-server=$IMAGE \
-            -n ${NAMESPACE}
-
-          kubectl rollout status deployment/leave-mcp-server \
-            -n ${NAMESPACE} \
-            --timeout=240s
+          kubectl rollout status deployment/leave-mcp-server -n ${NAMESPACE} --timeout=240s
 
       - name: Diagnose failed rollout
         if: failure()
