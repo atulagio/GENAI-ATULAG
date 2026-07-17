@@ -26,6 +26,15 @@ on:
                           # useful when you just want to confirm a workflow-file
                           # fix without touching app code
 
+# Only one CD run active per branch at a time. If you push and also click
+# "Run workflow" close together (or push twice quickly), the older
+# in-progress run is cancelled automatically instead of both existing side
+# by side — which is exactly what made it easy to accidentally look at the
+# wrong run's logs.
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   ECR_REPOSITORY: leave-management-mcp
   PROJECT_DIR: LEAVE-MANAGEMENT-PG-MCP
