@@ -45,8 +45,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    outputs:
-      image_uri: ${{ steps.image.outputs.uri }}
     steps:
       - uses: actions/checkout@v4
 
@@ -101,6 +99,19 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Log in to Amazon ECR
+        # Independently re-derives the registry URI in THIS job, rather
+        # than relying on needs.build-and-push.outputs.image_uri. That
+        # cross-job output kept coming through empty in practice — likely
+        # some interaction between environment-approval waits, concurrency
+        # cancellation, and re-runs — so instead of continuing to chase
+        # that, this job computes its own image reference. It's safe to
+        # do because ECR image URIs are fully deterministic from
+        # account + region + repo + commit SHA, and github.sha is the
+        # same value in every job of a run, not just build-and-push.
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
 
@@ -127,9 +138,9 @@ jobs:
 
       - name: Apply manifests (app only — Neon replaces in-cluster postgres.yaml)
         run: |
-          IMAGE="${{ needs.build-and-push.outputs.image_uri }}"
-          if [ -z "$IMAGE" ]; then
-            echo "::error::image_uri output from the build-and-push job is empty — aborting deploy instead of applying a broken image. This usually means the workflow was re-run via 'Re-run failed jobs' instead of a fresh run/push; try 'Run workflow' or a new push instead."
+          IMAGE="${{ steps.ecr-login.outputs.registry }}/${ECR_REPOSITORY}:${{ github.sha }}"
+          if [ -z "${{ steps.ecr-login.outputs.registry }}" ]; then
+            echo "::error::ECR registry URI came back empty from this job's own ecr-login step — check AWS credentials/permissions, this is no longer a cross-job output issue."
             exit 1
           fi
           echo "Deploying image: $IMAGE"
