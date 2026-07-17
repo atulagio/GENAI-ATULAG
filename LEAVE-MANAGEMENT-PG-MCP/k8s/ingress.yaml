@@ -15,15 +15,16 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
+    - host: leave-mcp.example.com   # replace with your real domain
       http:
         paths:
-          - path: /mcp
+          - path: /
             pathType: Prefix
             backend:
               service:
                 name: leave-mcp-server
                 port:
-                  number: 8000
+                  number: 80
   # tls:
   #   - hosts:
   #       - leave-mcp.example.com
