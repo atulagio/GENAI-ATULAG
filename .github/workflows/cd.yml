@@ -89,9 +89,6 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          # NOTE: these two are read from `secrets`, not `vars`, because
-          # that's the tab they were added to in GitHub. Functionally
-          # identical either way — just has to match where you put them.
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Set up kubectl
@@ -109,6 +106,9 @@ jobs:
       - name: Create/update leave-mcp-secrets from GitHub secrets
         # DATABASE_URL should be your Neon connection string, e.g.
         # postgresql://user:password@ep-xxxx.region.aws.neon.tech/leave_management?sslmode=require
+        # IMPORTANT: if the Neon password contains special characters
+        # (@ : / ? # & % etc.), it must be percent-encoded in the URI or
+        # the connection string parses incorrectly downstream.
         run: |
           kubectl create secret generic leave-mcp-secrets \
             --namespace "${NAMESPACE}" \
@@ -122,19 +122,9 @@ jobs:
           kubectl apply -f k8s/service.yaml
           kubectl apply -f k8s/ingress.yaml
 
-      - name: Get AWS Account ID
-        id: account
-        run: |
-          echo "account_id=$(aws sts get-caller-identity --query Account --output text)" >> "$GITHUB_OUTPUT"
-
-      - name: Debug image URI
-        run: |
-          echo "image_uri='${{ needs.build-and-push.outputs.image_uri }}'"
-          
       - name: Set image and roll out
         run: |
-          IMAGE="${{ steps.account.outputs.account_id }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${ECR_REPOSITORY}:${{ github.sha }}"
-
+          IMAGE="${{ needs.build-and-push.outputs.image_uri }}"
           echo "Deploying image: $IMAGE"
 
           kubectl set image deployment/leave-mcp-server \
@@ -143,5 +133,22 @@ jobs:
 
           kubectl rollout status deployment/leave-mcp-server \
             -n ${NAMESPACE} \
-            --timeout=180s
-            
+            --timeout=240s
+
+      - name: Diagnose failed rollout
+        if: failure()
+        run: |
+          echo "===================== Pods ====================="
+          kubectl get pods -n ${NAMESPACE} -l app=leave-mcp-server -o wide
+
+          echo "===================== Describe pods (events, probe failures, init container status) ====================="
+          kubectl describe pods -n ${NAMESPACE} -l app=leave-mcp-server
+
+          echo "===================== wait-for-postgres init container logs ====================="
+          kubectl logs -n ${NAMESPACE} -l app=leave-mcp-server -c wait-for-postgres --tail=100 || true
+
+          echo "===================== leave-mcp-server container logs (current) ====================="
+          kubectl logs -n ${NAMESPACE} -l app=leave-mcp-server -c leave-mcp-server --tail=100 || true
+
+          echo "===================== leave-mcp-server container logs (previous, if it crashed and restarted) ====================="
+          kubectl logs -n ${NAMESPACE} -l app=leave-mcp-server -c leave-mcp-server --previous --tail=100 || true
