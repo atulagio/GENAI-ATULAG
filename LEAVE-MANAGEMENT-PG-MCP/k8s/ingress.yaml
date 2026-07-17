@@ -15,8 +15,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: leave-mcp.example.com   # replace with your real domain
-      http:
+    - http:
         paths:
           - path: /
             pathType: Prefix
@@ -24,7 +23,7 @@ spec:
               service:
                 name: leave-mcp-server
                 port:
-                  number: 80
+                  number: 8000
   # tls:
   #   - hosts:
   #       - leave-mcp.example.com
