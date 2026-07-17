@@ -64,6 +64,7 @@ jobs:
         id: image
         run: |
           echo "uri=${{ steps.ecr-login.outputs.registry }}/${ECR_REPOSITORY}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "Computed image URI for this run: ${{ steps.ecr-login.outputs.registry }}/${ECR_REPOSITORY}:${{ github.sha }}"
 
       - name: Build and push
         uses: docker/build-push-action@v6
